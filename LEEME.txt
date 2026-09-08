@@ -1,12 +1,12 @@
 ================================================================
- NInfer 4090 Windows - v1.0.6 (pre-compiled portable build)
- NInfer 4090 Windows - v1.0.6 (build portable precompilada)
+ NInfer 4090 Windows - v1.0.7 (pre-compiled portable build)
+ NInfer 4090 Windows - v1.0.7 (build portable precompilada)
 ================================================================
 
 WHAT THIS IS / QUE ES
   Native Windows 11 build of NInfer (https://github.com/Neroued/ninfer)
   for NVIDIA GeForce RTX 4090 (sm_89, Ada Lovelace), synced to upstream
-  v1.0.6 (commit a16b6442) + sm_89 layer: kernels adapted to the 48 KiB
+  v1.0.7 (commit b88c0f6f) + sm_89 layer: kernels adapted to the 48 KiB
   static shared-memory limit, rk4v4-e8 KV storage (E8 lattice 4-bit),
   MTP3 and DFlash2 speculative decoding, WDDM evictable-budget bypass.
   Apache License 2.0.
@@ -51,7 +51,7 @@ MEASURED WITH THIS BUILD (RTX 4090, single stream, 2026-09-08)
                                     decode 97.8 tok/s (37.7% accept)
   27B      rk4v4-e8 DFlash2 C=2 131k: decode 104 tok/s (28.5% of 7 tok)
   Full table + comparison vs upstream published 5090 numbers: README.md
-  of the windows-4090 branch.
+  of this repository.
 
 NOTES / NOTAS
   - rk4v4-e8 is a RUNTIME KV quantization, not a weight format: the
@@ -80,7 +80,7 @@ MODELS (published by Neroued / publicados por Neroued)
   https://huggingface.co/neroued/Qwen3.8-27B-NInfer       (also verified here)
 
 SOURCES / FUENTES
-  https://github.com/Ambolio/ninfer-windows  (branch windows-4090)
+  https://github.com/Ambolio/ninfer-4090-windows  (branch main)
 
 CREDITS
   Neroued (upstream) - UDPSendToFailed (original 4090 fork creator:
@@ -88,4 +88,4 @@ CREDITS
   natpate (Win32 base) - headpiece747 (Windows MSVC base) -
   Don-Chad (Ampere pioneer) - Qwen Team - unsloth (NVFP4) -
   z-lab (DFlash companion weights).
-  Full legal attribution: NOTICE in the windows-4090 branch.
+  Full legal attribution: NOTICE in this repository.

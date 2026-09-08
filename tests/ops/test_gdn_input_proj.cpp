@@ -214,10 +214,13 @@ int run_nvfp4() {
     int failures = 0;
     failures += run_nvfp4_case(parent, 1, ops::LinearPolicy::A16Only);
     failures += run_nvfp4_case(parent, 4, ops::LinearPolicy::A16Only);
+#if !defined(NINFER_SM89)
+    // AllowA4 (W4A4) en NVFP4: kernels SM120 (Blackwell) por diseño upstream.
     failures += run_nvfp4_case(parent, 1, ops::LinearPolicy::AllowA4);
     failures += run_nvfp4_case(parent, 2, ops::LinearPolicy::AllowA4);
     failures += run_nvfp4_case(parent, 17, ops::LinearPolicy::AllowA4);
     failures += run_nvfp4_case(parent, 1024, ops::LinearPolicy::AllowA4);
+#endif
     return failures;
 }
 

@@ -1377,6 +1377,12 @@ int main(int argc, char** argv) {
 
     int failures = 0;
     if (nvfp4_only || k8v4_only) {
+#if defined(NINFER_SM89)
+        // KV NVFP4/k8v4: kernels SM120 (Blackwell) por diseño upstream.
+        std::cout << (nvfp4_only ? "nvfp4" : "k8v4")
+                  << " kv_cache_append: SKIP (NVFP4 KV requires SM120 (Blackwell) kernels)\n";
+        return 77;
+#endif
         const KvCacheStorage storage =
             nvfp4_only ? KvCacheStorage::Nvfp4Group16 : KvCacheStorage::Fp8KeyNvfp4Value;
         for (const int kv_heads : {4, 2}) { failures += full_append_case(kv_heads, storage); }
@@ -1394,13 +1400,18 @@ int main(int argc, char** argv) {
         failures += full_append_case(kv_heads, KvCacheStorage::BFloat16);
         failures += full_append_case(kv_heads, KvCacheStorage::Int8Group64);
         failures += full_append_case(kv_heads, KvCacheStorage::Fp8E4M3Row256);
+#if !defined(NINFER_SM89)
+        // KV NVFP4/k8v4: kernels SM120 (Blackwell) por diseño upstream.
         failures += full_append_case(kv_heads, KvCacheStorage::Nvfp4Group16);
         failures += full_append_case(kv_heads, KvCacheStorage::Fp8KeyNvfp4Value);
+#endif
     }
     failures += full_append_case(2, KvCacheStorage::Int8Group64, 129);
     failures += full_append_case(2, KvCacheStorage::Fp8E4M3Row256, 129);
+#if !defined(NINFER_SM89)
     failures += full_append_case(2, KvCacheStorage::Nvfp4Group16, 129);
     failures += full_append_case(2, KvCacheStorage::Fp8KeyNvfp4Value, 129);
+#endif
     failures += run_case(1, 0, 0, false, {0, 1, 2});
     failures += run_case(1, 1, 63, false, {2, 3, 4});
     failures += run_case(16, 7, 60, false, {5, 1, 4}, 5);

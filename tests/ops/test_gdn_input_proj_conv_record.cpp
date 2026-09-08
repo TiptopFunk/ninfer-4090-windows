@@ -370,7 +370,14 @@ int run_nvfp4() {
             },
             seed);
     };
-    for (auto policy : {ops::LinearPolicy::A16Only, ops::LinearPolicy::AllowA4}) {
+#if defined(NINFER_SM89)
+    // AllowA4 (W4A4) en NVFP4: kernels SM120 (Blackwell) por diseño upstream.
+    const std::vector<ops::LinearPolicy> policies{ops::LinearPolicy::A16Only};
+#else
+    const std::vector<ops::LinearPolicy> policies{ops::LinearPolicy::A16Only,
+                                                   ops::LinearPolicy::AllowA4};
+#endif
+    for (auto policy : policies) {
         for (int width = 2; width <= 16; ++width) {
             failures += run(width, 1, {}, policy, 1600U + width);
             failures += run(width, 8, ragged(width, 8), policy, 1650U + width);

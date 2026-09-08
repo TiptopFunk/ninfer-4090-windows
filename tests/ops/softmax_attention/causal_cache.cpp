@@ -2430,6 +2430,12 @@ int run_softmax_attention_nvfp4_tests() {
         std::cout << "SKIP: no usable CUDA device\n";
         return 77;
     }
+#if defined(NINFER_SM89)
+    // KV NVFP4 (Nvfp4Group16): kernels SM120 (Blackwell) por diseño upstream;
+    // los stubs de build SM89 lanzan std::runtime_error.
+    std::cout << "SKIP: nvfp4 KV attention requires SM120 (Blackwell) kernels\n";
+    return 77;
+#endif
     int failures = run_nvfp4_cases();
     failures += run_quantized_batch_cases(KvCacheStorage::Nvfp4Group16, 720u);
     failures += report_quantization_quality(KvCacheStorage::Nvfp4Group16, 724u);
@@ -2443,6 +2449,11 @@ int run_softmax_attention_k8v4_tests() {
         std::cout << "SKIP: no usable CUDA device\n";
         return 77;
     }
+#if defined(NINFER_SM89)
+    // KV k8v4 (Fp8KeyNvfp4Value): kernels SM120 (Blackwell) por diseño upstream.
+    std::cout << "SKIP: k8v4 KV attention requires SM120 (Blackwell) kernels\n";
+    return 77;
+#endif
     int failures = run_k8v4_cases();
     failures += run_quantized_batch_cases(KvCacheStorage::Fp8KeyNvfp4Value, 815u);
     failures += report_quantization_quality(KvCacheStorage::Fp8KeyNvfp4Value, 819u);
@@ -2458,12 +2469,15 @@ int run_softmax_attention_causal_cache_tests() {
     }
 
     int failures = verify_workspace_capacity_contract();
+#if !defined(NINFER_SM89)
+    // Subcasos NVFP4 / k8v4: kernels SM120 (Blackwell) por diseño upstream.
     failures += run_nvfp4_cases();
     failures += run_quantized_batch_cases(KvCacheStorage::Nvfp4Group16, 720u);
     failures += report_quantization_quality(KvCacheStorage::Nvfp4Group16, 724u);
     failures += run_k8v4_cases();
     failures += run_quantized_batch_cases(KvCacheStorage::Fp8KeyNvfp4Value, 815u);
     failures += report_quantization_quality(KvCacheStorage::Fp8KeyNvfp4Value, 819u);
+#endif
     for (const Geometry& geometry : kGeometries) { failures += run_geometry(geometry); }
     failures += run_fp8_cases();
     failures += run_batch_cases();

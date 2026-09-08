@@ -9,6 +9,12 @@
 #include "targets/qwen3_6/impl/frontend/tokenizer.h"
 #include "text/unicode.h"
 
+// Compat MSVC: headers Windows (vía el engine) definen macros que rompen
+// identificadores de este test: `near` (windef.h, memoria 16-bit) y
+// `small` (rpcndr.h, NDR: #define small char).
+#undef near
+#undef small
+
 #include <nlohmann/json.hpp>
 
 #include <algorithm>

@@ -1,6 +1,10 @@
 #include "runtime/contract/types.h"
 #include "runtime/engine/request_record.h"
 
+// Compat MSVC: windows.h (vía headers del runtime) define `near` como macro
+// legacy de modelos de memoria 16-bit y rompe la función libre declarada abajo.
+#undef near
+
 #include <cmath>
 #include <cstdint>
 #include <iostream>

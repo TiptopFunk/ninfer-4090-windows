@@ -2,7 +2,7 @@
 
 > Windows port of NInfer for the NVIDIA GeForce RTX 4090 (`sm_89`, Ada Lovelace). Selected checkpoints. Maximum single-GPU inference performance. **100% Native Windows MSVC (no WSL2 required).**
 
-**[⬇️ Descargar versión precompilada portable v1.0.6 (Windows 11) en GitHub Releases](https://github.com/Ambolio/ninfer-windows/releases/download/v1.0.6-windows/ninfer-4090-windows-v1.0.6.zip)**
+**[⬇️ Descargar versión precompilada portable v1.0.7 (Windows 11) en GitHub Releases](https://github.com/Ambolio/ninfer-4090-windows/releases/download/v1.0.7-windows/ninfer-4090-windows-v1.0.7.zip)**
 
 NInfer 4090 Windows is a native Windows 11 port of the upstream
 [Neroued/ninfer](https://github.com/Neroued/ninfer) C++20/CUDA inference engine,
@@ -41,11 +41,13 @@ full legal attribution (Apache-2.0 §4) and third-party details.
 
 ---
 
-## Relationship to Upstream (v1.0.6)
+## Relationship to Upstream (v1.0.7)
 
-This branch tracks upstream `a16b6442` (v1.0.6 sync, 88 commits) plus the
-sm_89 layer, and the post-merge correctness work of 2026-09-08 (int4-KV
-accumulator fix `6c4f5a10`, small-T T=7/8 port `f7cef9e9`+`486f647d`).
+This branch tracks upstream `b88c0f6f` (v1.0.7: 7 commits post-v1.0.6 —
+MoE pipeline/prefetch/L2 ×3, NVFP4 W4A4 TMA, open-addressed BPE table,
+unicode NFC-skip, host-arena fix) plus the sm_89 layer, and the post-merge
+correctness work of 2026-09-08 (int4-KV accumulator fix `6c4f5a10`,
+small-T T=7/8 port `f7cef9e9`+`486f647d`).
 
 ### Shared with upstream
 
@@ -60,7 +62,7 @@ accumulator fix `6c4f5a10`, small-T T=7/8 port `f7cef9e9`+`486f647d`).
 ### Added by this fork
 
 - **Native Windows 11 compilation**: CMake + MSVC 2022 + Ninja + CUDA 13.x —
-  no WSL2, no virtualization overhead (`build_windows.bat`, `build_v1.0.6.bat`).
+  no WSL2, no virtualization overhead (`build_windows.bat`, `build_v1.0.7.bat`).
 - **WDDM bypass (`--wddm-evictable-budget`)**: D3D12/DXGI residency lock that
   budgets runtime memory against total VRAM instead of the WDDM process
   budget, recovering 1.0–1.5 GB of physically retained VRAM (see
@@ -86,6 +88,12 @@ accumulator fix `6c4f5a10`, small-T T=7/8 port `f7cef9e9`+`486f647d`).
   [Measured performance — this build](#measured-performance--this-build)).
 - 260,032-token `rk4v4-e8` KV pool at C=4 with the WDDM budget, 96% of the
   24 GB card resident (measured, not estimated).
+- **v1.0.7 test suite on Windows (2026-09-09)**: 103/104 green — 7 skipped
+  by-design (real-data + sm_89-only cases), 1 documented pre-existing
+  borderline (gdn_gating_proj T=4097, deterministic), 2 excluded on Windows
+  (BEX64 0xC0000409 in the MSVC test binaries — not the engine: the v1.0.7
+  server with real production data (150k-merge tokenizer, 260k profile)
+  boots and serves clean, verified with a :8091 smoke).
 
 Details and A/B measurements: [PORT_v1.0.6.md](PORT_v1.0.6.md).
 

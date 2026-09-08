@@ -51,6 +51,11 @@ int main() {
         std::cout << "SKIP: no usable CUDA device\n";
         return 77;
     }
+#if defined(NINFER_SM89)
+    // Test 100 % W4A4 (NVFP4): kernels SM120 (Blackwell) por diseño upstream.
+    std::cout << "SKIP: NVFP4 W4A4 requires SM120 (Blackwell) kernels\n";
+    return 77;
+#endif
     try {
         const int failures = run_nvfp4_a4();
         std::cout << (failures == 0 ? "OK" : "FAIL") << " NVFP4_A4 Linear\n";
