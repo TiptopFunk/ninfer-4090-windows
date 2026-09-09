@@ -287,7 +287,7 @@ Also verified on this branch (measured above). Model artifacts:
 
 ## Installation (Pre-compiled)
 
-**Download the [ninfer-4090-windows-v1.0.6.zip](https://github.com/Ambolio/ninfer-windows/releases/download/v1.0.6-windows/ninfer-4090-windows-v1.0.6.zip) from the [v1.0.6-windows release](https://github.com/Ambolio/ninfer-windows/releases/tag/v1.0.6-windows).**
+**Download the [ninfer-4090-windows-v1.0.6.zip](https://github.com/Ambolio/ninfer-4090-windows/releases/download/v1.0.6-windows/ninfer-4090-windows-v1.0.6.zip) from the [v1.0.6-windows release](https://github.com/Ambolio/ninfer-4090-windows/releases/tag/v1.0.6-windows).**
 
 The ZIP contains `ninfer-serve.exe` with its runtime DLLs (FFmpeg), a generic
 `start_4090.bat`, a `download_model.bat`, and a `LEEME.txt` with instructions
