@@ -4,6 +4,8 @@
 
 **[⬇️ Descargar versión precompilada portable v1.0.7 (Windows 11) en GitHub Releases](https://github.com/Ambolio/ninfer-4090-windows/releases/download/v1.0.7-windows/ninfer-4090-windows-v1.0.7.zip)**
 
+> 🖥️ **Companion repository (RTX 5090):** [Ambolio/ninfer-5090-windows](https://github.com/Ambolio/ninfer-5090-windows) — the Blackwell (`sm_120a`) sibling branch. Both repos publish the full two-card benchmark tables: see [Benchmarks — v1.0.7 cross-GPU campaign (2026-09-09)](#benchmarks--v107-cross-gpu-campaign-2026-09-09).
+
 NInfer 4090 Windows is a native Windows 11 port of the upstream
 [Neroued/ninfer](https://github.com/Neroued/ninfer) C++20/CUDA inference engine,
 adapted to the Ada Lovelace architecture (`sm_89`): kernels fitted to the
@@ -207,6 +209,138 @@ v1.0.5 → v1.0.6 A/B on this 4090 is **+6.8 %** (int4-KV fix).
 
 ---
 
+## Benchmarks — v1.0.7 cross-GPU campaign (2026-09-09)
+
+Measured **2026-09-09** in a single back-to-back campaign on one dual-GPU
+machine (Windows 11): the **RTX 4090 (24 GB, `sm_89`)** and the **RTX 5090
+(32 GB, `sm_120a`)** — the v1.0.7 binaries (sha256-verified byte-identical to
+the production binaries), `--wddm-evictable-budget` on every server, and the
+exact per-run argv recorded in each point JSON. Same artifacts, same harness,
+same day on both cards.
+
+> 🖥️ **Sibling repositories:** the full per-card data — methodology,
+> deviations registry (D1–D11), raw point JSONs and campaign logs — live in
+> both [Ambolio/ninfer-4090-windows](https://github.com/Ambolio/ninfer-4090-windows)
+> and [Ambolio/ninfer-5090-windows](https://github.com/Ambolio/ninfer-5090-windows).
+> This section is identical in both repos on purpose, so each page shows the
+> numbers for *both* cards.
+
+**Artifacts used in this campaign** (public HuggingFace repos, by Neroued):
+
+| Artifact | Weights | HuggingFace | Used for |
+|---|---|---|---|
+| `qwen3_6_35b_a3bv2.ninfer` — Qwen3.6-35B-A3B v2 | groupwise-int, 20.6 GiB | [Qwen3.6-35B-A3B-NInfer](https://huggingface.co/neroued/Qwen3.6-35B-A3B-NInfer) | S3 + P0 — both cards |
+| `qwen3_8_27b_nvfp4.ninfer` — Qwen3.8-27B | nvfp4, 21.5 GB | [Qwen3.8-27B-nvfp4-NInfer](https://huggingface.co/neroued/Qwen3.8-27B-nvfp4-NInfer) | N0 + NS — 5090 |
+| `qwen3_8_27b.ninfer` — Qwen3.8-27B | groupwise-int, 16.7 GiB | [Qwen3.8-27B-NInfer](https://huggingface.co/neroued/Qwen3.8-27B-NInfer) | NS — 4090 |
+
+(The 35B-A3B "v2" is the current production conversion of the public
+Qwen3.6-35B-A3B family; the 27B rows use the two public 27B conversions —
+NVFP4 on the 32 GB card, groupwise-int on the 24 GB card.)
+
+### S3 — 35B-A3B v2, MTP3 d3, saturated decode (both cards)
+
+Stochastic 8,192-token generation per request (293-token prompt), at
+concurrency C = 1/2/4/8; int8 KV, `auto` capacity. Steady-state committed
+decode rate:
+
+| C | 4090 — steady (tok/s) | 5090 — steady (tok/s) | 5090 / 4090 |
+|---:|---:|---:|---:|
+| 1 | 459.5 | 672.9 | **1.46×** |
+| 2 | 660.7 | 974.3 | **1.47×** |
+| 4 | 914.3 | 1,336.4 | **1.46×** |
+| 8 | 1,095.5 ¹ | 1,544.5 | **1.41×** |
+
+Draft acceptance: 4090 67.0–71.1 % · 5090 66.3–68.6 % — 8/8 real concurrent
+requests on both cards.
+
+¹ **24 GB wall with int8:** the `auto` pool on the 4090 resolves 59,648
+tokens < the 8×8,485 needed for C=8, so that point re-ran with the documented
+ladder `--kv-dtype rk4v4-e8 --kv-capacity 131072` (E8-lattice KV, 748 MiB
+pool) — still 8/8 real, mean batch 8.0. The 5090 resolves the full
+131,072-token pool with int8 `auto` in 32 GB.
+
+### NS — 27B, MTP3 d3, saturated decode (both cards)
+
+Same protocol (335-token prompt + 8,192 decode); int8 `auto` KV pools of
+16,384 / 32,768 / 65,536 / 113,216 (4090) and 16,384 / 32,768 / 65,536 /
+131,072 (5090):
+
+| C | 4090 — steady (tok/s) | 5090 — steady (tok/s) | 5090 / 4090 |
+|---:|---:|---:|---:|
+| 1 | 108.5 | 148.1 | 1.37× |
+| 2 | 164.6 | 281.2 | 1.71× |
+| 4 | 185.9 | 491.8 | 2.65× |
+| 8 | 290.5 | 827.5 | 2.85× |
+
+Draft acceptance: 4090 46.1–47.9 % · 5090 44.9–46.2 %.
+
+⚠ **Not like-for-like:** the 4090 ran the **groupwise-int** 27B artifact
+(16.7 GiB) and the 5090 the **NVFP4** one (21.5 GB), so the widening ratio
+(1.37× → 2.85×) is hardware *plus* weight quantization — NVFP4 reads fewer
+bytes per token, and the gap grows with concurrency. The S3 table above is
+the same-artifact comparison: ~1.45× with the identical 35B-A3B v2 on both
+cards.
+
+### P0 — 35B-A3B v2, MTP0 (no speculation), NIAH context corpus (both cards)
+
+20 serial requests = 5 seeds × {8k, 64k, 128k, 256k} contexts
+(2,311,680 prompt tokens total). Prefill and decode rates per context point:
+
+| Context (tok) | 4090 prefill | 5090 prefill | 4090 TTFT | 5090 TTFT | 4090 decode | 5090 decode |
+|---:|---:|---:|---:|---:|---:|---:|
+| 7,680 | 12,375.1 | 18,699.8 | 624 ms | 414 ms | 240.7 | 363.9 |
+| 64,512 | 9,418.1 | 12,092.7 | 6,875 ms | 5,363 ms | 202.2 | 317.9 |
+| 130,048 | 7,193.4 | 8,417.1 | 18,127 ms | 15,503 ms | 173.2 | 278.2 |
+| 260,096 | 4,927.2 | 5,261.9 | 52,884 ms | 49,530 ms | 136.3 | 225.5 |
+
+(prefill/decode in tok/s; full-corpus makespan: 4090 **393.9 s** · 5090
+**355.3 s**.)
+
+### N0 — 27B NVFP4, MTP0, NIAH context (5090 only)
+
+| Context (tok) | Prefill (tok/s) | TTFT (ms) | Decode (tok/s) |
+|---:|---:|---:|---:|
+| 7,680 | 9,780.6 | 789 | 75.9 |
+| 64,512 | 5,778.1 | 11,190 | 69.6 |
+| 130,048 | 3,866.0 | 33,692 | 63.7 |
+| 260,096 | 2,331.6 | 111,650 | 54.6 |
+
+(The 27B context point ran on the 5090 only — the 4090 27B context run was
+outside the campaign's fast profile; its 27B decode-saturation point is the
+4090 column of the NS table.)
+
+### Windows vs upstream Linux parity (same card)
+
+The point of the campaign: same models, same commands, same GPU — the
+measured delta is the overhead of the Windows port (WDDM), nothing else.
+
+- **RTX 5090 — parity.** Windows matches or slightly exceeds the numbers
+  upstream published for the same card, across every point of this campaign:
+  S3 steady 104.7–111.9 % of upstream, NS steady 103.0–107.9 %, P0 prefill
+  100.3–105.6 %, P0 decode 105.9–107.6 %, N0 prefill 105.9–117.3 %.
+- **RTX 4090 — 38–79 % of the upstream *5090* reference** (S3 71.5–79.3 %,
+  NS 37.9–75.4 % — with the quantization caveat above —, P0 63.5–93.9 %):
+  that is the Ada-vs-Blackwell hardware gap, not port overhead. Within the
+  same hardware the port sits at parity (100–117 % on the 5090; the 4090's
+  own v1.0.5 → v1.0.6 A/B — int4-KV fix — measured +6.8 %).
+
+### Validation (same campaign)
+
+- **4090:** full ctest suite on the v1.0.7 build — 106/109 passed (3
+  documented failures: 2 = MSVC test-binary artifact `0xC0000409`, 1 = known
+  deterministic borderline; the v1.0.7 server with real production data
+  boots and serves clean, :8091 smoke) + 7 skipped by design. pytest
+  75 passed / 3 skipped / 1 failed — the single failure is a Windows
+  path-separator artifact in a converter test (`endswith("/model")`), not
+  port logic.
+- **5090:** ctest pass covered by the 4090 run (byte-identical trees); the
+  v1.0.7 5090 deployment additionally validated its suite 103/103 executed
+  green (1 `DISABLED` on Windows — the BEX64 test-binary artifact, engine
+  verified clean with a production-artifact smoke). pytest 75/3/1 (same
+  path-separator artifact).
+
+---
+
 ## Running the server
 
 ### Generic startup (shipped as `start_4090.bat`)
@@ -287,7 +421,7 @@ Also verified on this branch (measured above). Model artifacts:
 
 ## Installation (Pre-compiled)
 
-**Download the [ninfer-4090-windows-v1.0.6.zip](https://github.com/Ambolio/ninfer-4090-windows/releases/download/v1.0.6-windows/ninfer-4090-windows-v1.0.6.zip) from the [v1.0.6-windows release](https://github.com/Ambolio/ninfer-4090-windows/releases/tag/v1.0.6-windows).**
+**Download the [ninfer-4090-windows-v1.0.7.zip](https://github.com/Ambolio/ninfer-4090-windows/releases/download/v1.0.7-windows/ninfer-4090-windows-v1.0.7.zip) from the [v1.0.7-windows release](https://github.com/Ambolio/ninfer-4090-windows/releases/tag/v1.0.7-windows).**
 
 The ZIP contains `ninfer-serve.exe` with its runtime DLLs (FFmpeg), a generic
 `start_4090.bat`, a `download_model.bat`, and a `LEEME.txt` with instructions
@@ -307,7 +441,7 @@ and model links.
 ### 1. Build Automatically
 
 ```cmd
-build_v1.0.6.bat
+build_v1.0.7.bat
 ```
 
 Self-contained: sm_89, vision, Release. Needs this tree + MSVC BuildTools +
