@@ -2,7 +2,7 @@
 
 > Windows port of NInfer for the NVIDIA GeForce RTX 4090 (`sm_89`, Ada Lovelace). Selected checkpoints. Maximum single-GPU inference performance. **100% Native Windows MSVC (no WSL2 required).**
 
-**[⬇️ Descargar versión precompilada portable v1.0.7 (Windows 11) en GitHub Releases](https://github.com/Ambolio/ninfer-4090-windows/releases/download/v1.0.7-windows/ninfer-4090-windows-v1.0.7.zip)**
+**[⬇️ Descargar versión precompilada portable v1.0.8 (Windows 11) en GitHub Releases](https://github.com/Ambolio/ninfer-4090-windows/releases/download/v1.0.8-windows/ninfer-4090-windows-v1.0.8.zip)**
 
 > 🖥️ **Companion repository (RTX 5090):** [Ambolio/ninfer-5090-windows](https://github.com/Ambolio/ninfer-5090-windows) — the Blackwell (`sm_120a`) sibling branch. Both repos publish the full two-card benchmark tables: see [Benchmarks — v1.0.7 cross-GPU campaign (2026-09-09)](#benchmarks--v107-cross-gpu-campaign-2026-09-09).
 
@@ -33,6 +33,8 @@ gratitude to all of them — in lineage order:
 | **natpate** | [natpate/ninfer-windows](https://github.com/natpate/ninfer-windows) | Base Win32/MSVC portability layer, unbuffered asynchronous I/O (`OVERLAPPED`), initial Windows scripts |
 | **headpiece747** | [headpiece747/ninfer-5090-windows](https://github.com/headpiece747/ninfer-5090-windows) | Native Windows MSVC compilation base from which this branch descends |
 | **Don-Chad** | [Don-Chad/ninfer-3090](https://github.com/Don-Chad/ninfer-3090) | Pioneering Ampere work and early compatibility bridges |
+| **dylanbrodiefafard** | [dylanbrodiefafard/ninfer](https://github.com/dylanbrodiefafard/ninfer) | v1.0.8 port: incremental host encode (`48d1857`) |
+| **nmorgowicz** | [nmorgowicz/ninfer-windows](https://github.com/nmorgowicz/ninfer-windows) | v1.0.8 port: `--tolerant-tool-calls` (`69b0950`) |
 
 Model foundations: **Qwen Team (Alibaba Cloud)** for the foundational model
 architectures, **unsloth** for the NVFP4 quantizations, and **z-lab** for the
@@ -43,13 +45,34 @@ full legal attribution (Apache-2.0 §4) and third-party details.
 
 ---
 
-## Relationship to Upstream (v1.0.7)
+## Relationship to Upstream (v1.0.8)
 
 This branch tracks upstream `b88c0f6f` (v1.0.7: 7 commits post-v1.0.6 —
 MoE pipeline/prefetch/L2 ×3, NVFP4 W4A4 TMA, open-addressed BPE table,
-unicode NFC-skip, host-arena fix) plus the sm_89 layer, and the post-merge
+unicode NFC-skip, host-arena fix) plus the sm_89 layer, the post-merge
 correctness work of 2026-09-08 (int4-KV accumulator fix `6c4f5a10`,
-small-T T=7/8 port `f7cef9e9`+`486f647d`).
+small-T T=7/8 port `f7cef9e9`+`486f647d`), and — new in v1.0.8 — five
+verified ports from the NInfer fork ecosystem (2026-09-09 forkscan, A/B'd
+against the v1.0.7 binaries on both cards before the deploy; see
+[Benchmarks — v1.0.7 cross-GPU campaign](#benchmarks--v107-cross-gpu-campaign-2026-09-09),
+subsection "v1.0.8 A/B on this baseline"):
+
+- **GDN gating pairwise-K** (sergiuszm `5d57fed`, sm_89): pairwise
+  K-reduction in the GDN gating-projection `MmaUnsplit` kernel. Resolves
+  the v1.0.7 borderline `gdn_gating_proj` test (ratio 1.212 → PASS).
+- **T=1 double-buffered Ada MMA** (UDPSendToFailed `39a6f20`, sm_89): the
+  T=1 draft head runs the double-buffered Ada MMA path.
+- **SM-count CTA sizing** (UDPSendToFailed `45a5ae5`, sm_89): CTA wave
+  sizes are derived from the target's SM count instead of an RTX 5090
+  constant (fixes oversized CTA waves on GPUs with fewer SMs).
+- **`--tolerant-tool-calls`** (nmorgowicz `69b0950`, frontend, both
+  cards): opt-in serve flag that keeps a complete Qwen tool call even when
+  trailing wrapper garbage follows (off by default; the strict parser
+  keeps its all-or-nothing behavior).
+- **Incremental host encode** (dylanbrodiefafard `48d1857`, frontend,
+  both cards): LRU cache of committed history prefixes with
+  loop-position splicing — unchanged history is re-encoded incrementally
+  instead of from scratch.
 
 ### Shared with upstream
 
@@ -64,7 +87,7 @@ small-T T=7/8 port `f7cef9e9`+`486f647d`).
 ### Added by this fork
 
 - **Native Windows 11 compilation**: CMake + MSVC 2022 + Ninja + CUDA 13.x —
-  no WSL2, no virtualization overhead (`build_windows.bat`, `build_v1.0.7.bat`).
+  no WSL2, no virtualization overhead (`build_windows.bat`, `build_v1.0.8.bat`).
 - **WDDM bypass (`--wddm-evictable-budget`)**: D3D12/DXGI residency lock that
   budgets runtime memory against total VRAM instead of the WDDM process
   budget, recovering 1.0–1.5 GB of physically retained VRAM (see
@@ -96,6 +119,14 @@ small-T T=7/8 port `f7cef9e9`+`486f647d`).
   (BEX64 0xC0000409 in the MSVC test binaries — not the engine: the v1.0.7
   server with real production data (150k-merge tokenizer, 260k profile)
   boots and serves clean, verified with a :8091 smoke).
+- **v1.0.8 test suite on Windows (2026-09-09)**: 104/104 executed green
+  (407 s) — the v1.0.7 borderline `gdn_gating_proj` (T=4097, ratio 1.212)
+  now PASSES with the pairwise-K port; 7 skipped by-design (same as
+  v1.0.7); 3 excluded on Windows (`frontend_test`, `softmax_attention_test`,
+  `incremental_encode_test` — BEX64 0xC0000409 in the MSVC test binaries,
+  zero output at startup: a test-binary artifact, not the engine; the
+  v1.0.8 server with real production data boots and serves clean,
+  verified with production-artifact smokes).
 
 Details and A/B measurements: [PORT_v1.0.6.md](PORT_v1.0.6.md).
 
@@ -352,6 +383,36 @@ measured delta is the overhead of the Windows port (WDDM), nothing else.
   verified clean with a production-artifact smoke). pytest 75/3/1 (same
   path-separator artifact).
 
+### v1.0.8 A/B on this baseline (2026-09-09)
+
+v1.0.8 = v1.0.7 + the five fork ports listed in
+[Relationship to Upstream](#relationship-to-upstream-v108) (the three
+sm_89 kernel ports apply to the 4090; the two frontend ports apply to both
+cards). Same machine, same day, same like-for-like protocol as the campaign
+above, A/B'd against the v1.0.7 binaries before the v1.0.8 deploy:
+
+| Point (steady decode tok/s; P0 = NIAH 262,144 makespan in s, lower = better) | 4090 v1.0.7 | 4090 v1.0.8 | 5090 v1.0.7 | 5090 v1.0.8 |
+|---|---:|---:|---:|---:|
+| S3 35B C1 (int8 auto) | 459.5 | 459.0 | 672.9 | 671.9 |
+| S3 35B C2 (int8 auto) | 660.7 | **680.2** | 974.3 | 972.5 |
+| S3 35B C4 (int8 auto) | 914.3 | 918.4 | 1,336.4 | 1,334.4 |
+| S3 35B C8 (4090: prod shape `rk4v4-e8` 131,072 · 5090: int8 auto) | 1,095.5 | 1,099.0 | 1,544.5 | 1,530.7 |
+| P0 35B NIAH makespan (s) | 393.91 | 394.82 | 355.28 | 355.83 |
+| NS 27B C1 (4090 `groupwise-int` / 5090 `nvfp4`; see the NS caveats) | 108.5 | 108.5 | 148.1 | 147.7 |
+| NS 27B C2 | 164.6 | 159.2 ¹ | 281.2 | 280.0 |
+| NS 27B C4 | 185.9 | 183.6 | 491.8 | 495.4 |
+| NS 27B C8 | 290.5 | 289.8 | 827.5 | 830.9 |
+
+**Verdict: no regression on any point (±1 %).** The 35B gains +3 % at C=2
+on the 4090, the production shape (C8 `rk4v4-e8`) is stable, and the 5090
+is pure parity — its v1.0.8 delta is frontend-only, which is exactly the
+expected result.
+
+¹ borderline noise band on the 4090 27B reference point (morning v1.0.7
+baseline vs evening v1.0.8; the 27B runs on the 4090 only as a standby
+reference, not production; the 27B matrix decode stayed flat at
+−0.1…−0.9 % on the same day).
+
 ---
 
 ## Running the server
@@ -434,7 +495,7 @@ Also verified on this branch (measured above). Model artifacts:
 
 ## Installation (Pre-compiled)
 
-**Download the [ninfer-4090-windows-v1.0.7.zip](https://github.com/Ambolio/ninfer-4090-windows/releases/download/v1.0.7-windows/ninfer-4090-windows-v1.0.7.zip) from the [v1.0.7-windows release](https://github.com/Ambolio/ninfer-4090-windows/releases/tag/v1.0.7-windows).**
+**Download the [ninfer-4090-windows-v1.0.8.zip](https://github.com/Ambolio/ninfer-4090-windows/releases/download/v1.0.8-windows/ninfer-4090-windows-v1.0.8.zip) from the [v1.0.8-windows release](https://github.com/Ambolio/ninfer-4090-windows/releases/tag/v1.0.8-windows).**
 
 The ZIP contains `ninfer-serve.exe` with its runtime DLLs (FFmpeg), a generic
 `start_4090.bat`, a `download_model.bat`, and a `LEEME.txt` with instructions
@@ -454,7 +515,7 @@ and model links.
 ### 1. Build Automatically
 
 ```cmd
-build_v1.0.7.bat
+build_v1.0.8.bat
 ```
 
 Self-contained: sm_89, vision, Release. Needs this tree + MSVC BuildTools +

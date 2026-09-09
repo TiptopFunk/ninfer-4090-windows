@@ -133,9 +133,30 @@ struct EncodedChat {
     std::vector<std::optional<std::uint32_t>> cache_boundaries;
 };
 
+// The rendered boundary list in mapper order: checkpoint, execution boundaries, present
+// message boundaries, present cache boundaries (media run boundaries excluded).
+void append_rendered_text_boundaries(const RenderedChat& rendered,
+                                     std::vector<std::size_t>& byte_boundaries);
+
+// Full result of the rendered-chat encode: the mapped EncodedChat plus the per-boundary
+// results in the exact order of the byte-boundary list fed to encode_with_boundaries. The
+// incremental host-encode cache consumes both: the chat for its output, the results to store
+// committed-region frontiers for later splices.
+struct RenderedEncodeResult {
+    EncodedChat chat;
+    std::vector<std::size_t> boundary_list;
+    std::vector<TokenBoundaryResult> boundary_results;
+};
+
+RenderedEncodeResult
+encode_rendered_chat_full(const Tokenizer& tokenizer, const RenderedChat& rendered,
+                          std::size_t maximum_tokens = std::numeric_limits<std::size_t>::max());
+
 EncodedChat
 encode_rendered_chat(const Tokenizer& tokenizer, const RenderedChat& rendered,
                      std::size_t maximum_tokens = std::numeric_limits<std::size_t>::max());
+
+[[nodiscard]] bool operator==(const EncodedChat& lhs, const EncodedChat& rhs);
 
 class Processor {
 public:

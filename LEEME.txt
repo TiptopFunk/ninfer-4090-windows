@@ -1,15 +1,20 @@
 ================================================================
- NInfer 4090 Windows - v1.0.7 (pre-compiled portable build)
- NInfer 4090 Windows - v1.0.7 (build portable precompilada)
+ NInfer 4090 Windows - v1.0.8 (pre-compiled portable build)
+ NInfer 4090 Windows - v1.0.8 (build portable precompilada)
 ================================================================
 
 WHAT THIS IS / QUE ES
   Native Windows 11 build of NInfer (https://github.com/Neroued/ninfer)
   for NVIDIA GeForce RTX 4090 (sm_89, Ada Lovelace), synced to upstream
-  v1.0.7 (commit b88c0f6f) + sm_89 layer: kernels adapted to the 48 KiB
-  static shared-memory limit, rk4v4-e8 KV storage (E8 lattice 4-bit),
-  MTP3 and DFlash2 speculative decoding, WDDM evictable-budget bypass.
-  Apache License 2.0.
+  v1.0.7 (commit b88c0f6f) + five v1.0.8 fork ports (GDN gating
+  pairwise-K, T=1 double-buffered Ada MMA, SM-count CTA sizing - all
+  sm_89; --tolerant-tool-calls, incremental host encode - frontend) +
+  sm_89 layer: kernels adapted to the 48 KiB static shared-memory limit,
+  rk4v4-e8 KV storage (E8 lattice 4-bit), MTP3 and DFlash2 speculative
+  decoding, WDDM evictable-budget bypass. Apache License 2.0.
+  A/B vs the v1.0.7 binaries (same day, same hardware): no regression on
+  any serve-level point; the 35B profile gains +3 % at C=2 and the
+  production shape (C8 rk4v4-e8 131,072) is stable.
 
 CONTENTS / CONTENIDO
   ninfer-serve.exe    server binary / binario del servidor

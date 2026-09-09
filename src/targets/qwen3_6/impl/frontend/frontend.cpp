@@ -4,6 +4,7 @@
 #include <ninfer/targets/qwen3_6/prepared_prompt.h>
 
 #include "targets/qwen3_6/impl/frontend/chat_template.h"
+#include "targets/qwen3_6/impl/frontend/encoded_history_cache.h"
 #include "targets/qwen3_6/impl/frontend/media_cache.h"
 #include "targets/qwen3_6/impl/frontend/processor.h"
 #include "targets/qwen3_6/impl/frontend/test_access.h"
@@ -963,7 +964,7 @@ public:
           preserve_special(output.raw || output.preserve_special_tokens),
           split_reasoning(starts_in_reasoning && !output.raw),
           tool_call_output(output.raw ? nullptr : std::move(tool_call_output_),
-                           output.tool_name_max_length) {
+                           output.tool_name_max_length, output.tolerant_tool_calls) {
         if (thinking.budget && *thinking.budget == 0) {
             throw std::invalid_argument("thinking budget must be positive");
         }
@@ -1391,7 +1392,8 @@ const PreparedPromptData& FrontendTestAccess::inspect(const PreparedPrompt& prom
     return PreparedPromptAccess::view(prompt);
 }
 
-PreparedPrompt Frontend::prepare(PromptInput input, const PreparationControl& control) const {
+PreparedPrompt Frontend::prepare(PromptInput input, const PreparationControl& control,
+                                 fi::EncodedHistoryCache* cache) const {
     fi::check_preparation_control(control);
     const auto start              = Clock::now();
     const PromptOptions options   = input.options;
@@ -1432,6 +1434,7 @@ PreparedPrompt Frontend::prepare(PromptInput input, const PreparationControl& co
     std::vector<std::optional<std::uint32_t>> message_boundaries;
     std::vector<std::optional<std::uint32_t>> cache_boundaries;
     if (has_media) {
+        if (cache != nullptr) { fi::last_host_encode_observation = {}; }
         fi::Processor processor(*impl_->tokenizer, impl_->chat_template, impl_->processor,
                                 impl_->media_cache);
         fi::ProcessedInput processed;
@@ -1470,11 +1473,19 @@ PreparedPrompt Frontend::prepare(PromptInput input, const PreparationControl& co
         message_boundaries = std::move(processed.message_boundaries);
         cache_boundaries   = std::move(processed.cache_boundaries);
     } else {
-        const fi::RenderedChat rendered =
-            impl_->chat_template.render(messages, render_options(options, rendered_markers));
         const auto tokenize_started = Clock::now();
-        fi::EncodedChat encoded     = fi::encode_rendered_chat(
-            *impl_->tokenizer, rendered, static_cast<std::size_t>(impl_->max_context) + 1U);
+        fi::EncodedChat encoded;
+        if (cache != nullptr) {
+            encoded = fi::encode_chat_with_cache(
+                *impl_->tokenizer, impl_->chat_template, messages,
+                render_options(options, rendered_markers), *cache,
+                static_cast<std::size_t>(impl_->max_context) + 1U);
+        } else {
+            const fi::RenderedChat rendered =
+                impl_->chat_template.render(messages, render_options(options, rendered_markers));
+            encoded = fi::encode_rendered_chat(
+                *impl_->tokenizer, rendered, static_cast<std::size_t>(impl_->max_context) + 1U);
+        }
         result.prepare.tokenize_seconds =
             std::chrono::duration<double>(Clock::now() - tokenize_started).count();
         fi::check_preparation_control(control, "tokenization");
@@ -1501,7 +1512,8 @@ PreparedPrompt Frontend::prepare(PromptInput input, const PreparationControl& co
     return PreparedPrompt(std::move(prepared));
 }
 
-std::uint32_t Frontend::count_tokens(PromptInput input, const PreparationControl& control) const {
+std::uint32_t Frontend::count_tokens(PromptInput input, const PreparationControl& control,
+                                     fi::EncodedHistoryCache* cache) const {
     fi::check_preparation_control(control);
     const PromptOptions options           = input.options;
     std::vector<fi::ChatMessage> messages = convert_messages(std::move(input.messages));
@@ -1512,14 +1524,21 @@ std::uint32_t Frontend::count_tokens(PromptInput input, const PreparationControl
         throw std::invalid_argument("Vision is disabled for this Engine");
     }
     if (!has_media) {
-        const fi::RenderedChat rendered =
-            impl_->chat_template.render(messages, render_options(options));
-        const std::uint32_t count = checked_token_count(
-            fi::encode_rendered_chat(*impl_->tokenizer, rendered).input_ids.size());
+        fi::EncodedChat encoded;
+        if (cache != nullptr) {
+            encoded = fi::encode_chat_with_cache(*impl_->tokenizer, impl_->chat_template, messages,
+                                                 render_options(options), *cache);
+        } else {
+            const fi::RenderedChat rendered =
+                impl_->chat_template.render(messages, render_options(options));
+            encoded = fi::encode_rendered_chat(*impl_->tokenizer, rendered);
+        }
+        const std::uint32_t count = checked_token_count(encoded.input_ids.size());
         fi::check_preparation_control(control, "tokenization");
         return count;
     }
 
+    if (cache != nullptr) { fi::last_host_encode_observation = {}; }
     fi::Processor processor(*impl_->tokenizer, impl_->chat_template, impl_->processor,
                             impl_->media_cache);
     try {
@@ -1595,5 +1614,17 @@ OutputSession Frontend::make_output_session(const PreparedPrompt& prompt,
 }
 
 const StopPolicy& Frontend::default_stop_policy() const noexcept { return impl_->defaults; }
+
+PreparedPrompt EncodedHistoryPrepare::prepare(const Frontend& frontend, PromptInput input,
+                                              frontend_internal::EncodedHistoryCache& cache,
+                                              const PreparationControl& control) {
+    return frontend.prepare(std::move(input), control, &cache);
+}
+
+std::uint32_t EncodedHistoryPrepare::count_tokens(const Frontend& frontend, PromptInput input,
+                                                  frontend_internal::EncodedHistoryCache& cache,
+                                                  const PreparationControl& control) {
+    return frontend.count_tokens(std::move(input), control, &cache);
+}
 
 } // namespace ninfer::targets::qwen3_6

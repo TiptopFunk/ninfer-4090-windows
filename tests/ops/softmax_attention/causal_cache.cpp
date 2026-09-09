@@ -2252,6 +2252,16 @@ int run_geometry(const Geometry& geometry) {
             failures += run_a3_case(geometry, storage, {1, 128, 129, 191u}, mapping);
         }
 
+        if (storage == KvCacheStorage::Int8Group64) {
+            // The six-plus-token int8 route caps its split count to one resident wave between
+            // 5000 and 8198 visible keys. No other case in this suite reaches that window, and
+            // the cap decides both the launched grid and the per-split key extent.
+            failures += run_a1_case(geometry, storage, {6, 6994, 7000, 501u},
+                                    MappingPattern::Identity);
+            failures += run_a3_case(geometry, storage, {6, 6994, 7000, 502u},
+                                    MappingPattern::Identity);
+        }
+
         const AttentionCase a1_cases[] = {
             {1, 0, 1, 201u},    {6, 17, 23, 202u},   {7, 17, 512, 203u},
             {17, 31, 48, 204u}, {66, 63, 129, 205u},

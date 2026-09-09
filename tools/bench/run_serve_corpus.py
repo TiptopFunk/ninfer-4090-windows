@@ -297,6 +297,20 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--output", type=Path, required=True, help="campaign output directory")
     parser.add_argument("--port", type=int, default=8080, help="loopback serving port")
     parser.add_argument("--device", type=int, default=0, help="CUDA device index")
+    parser.add_argument(
+        "--kv-capacity",
+        default=None,
+        help="KV capacity policy (token count or 'auto'); omit to keep the server "
+        "default (explicit capacity equal to the 262144 max context, as in the "
+        "upstream Linux campaign commands)",
+    )
+    parser.add_argument(
+        "--kv-dtype",
+        default="int8",
+        help="KV cache dtype passed to ninfer-serve (default: int8, as in the "
+        "upstream Linux campaign commands; rk4v4-e8 is the documented Windows "
+        "fallback when the int8 context does not fit the 24 GB card)",
+    )
     return parser.parse_args(argv)
 
 
@@ -467,7 +481,22 @@ def require_server_log_identity(event: dict[str, Any], event_name: str) -> None:
         raise CampaignError(f"unexpected serving log identity {identity!r}; expected {expected!r}")
 
 
-def validate_server_start(event: dict[str, Any], spec: RunSpec, device: int) -> tuple[str, str]:
+KV_DTYPE_CANONICAL = {"int8": "int8-group64"}
+
+
+def canonical_kv_cache(kv_dtype: str) -> str:
+    """Map a --kv-dtype flag value to the engine's canonical kv_cache name.
+
+    The engine reports "int8-group64" for the default int8 KV and echoes the
+    flag value for the other dtypes (verified against server_start events:
+    --kv-dtype rk4v4-e8 -> engine kv_cache "rk4v4-e8").
+    """
+    return KV_DTYPE_CANONICAL.get(kv_dtype, kv_dtype)
+
+
+def validate_server_start(
+    event: dict[str, Any], spec: RunSpec, device: int, kv_dtype: str = "int8"
+) -> tuple[str, str]:
     require_server_log_identity(event, "server_start")
     engine = event.get("engine", {})
     actual = {
@@ -487,7 +516,7 @@ def validate_server_start(event: dict[str, Any], spec: RunSpec, device: int) -> 
         "max_context": 262144,
         "kv_capacity": 262144,
         "prefill_chunk": 1024,
-        "kv_cache": "int8-group64",
+        "kv_cache": canonical_kv_cache(kv_dtype),
         "cuda_graph": True,
         "prefix_reuse": False,
         "speculative_backend": spec.speculative_backend,
@@ -735,6 +764,8 @@ def server_command(
     server_log: Path,
     port: int,
     device: int,
+    kv_capacity: str | None = None,
+    kv_dtype: str = "int8",
 ) -> list[str]:
     command = [
         str(serve),
@@ -747,18 +778,29 @@ def server_command(
         spec.model_id,
         "--max-context",
         "262144",
-        "--prefill-chunk",
-        "1024",
-        "--log-stats-interval-ms",
-        "0",
-        "--device",
-        str(device),
-        "--request-log-jsonl",
-        str(server_log),
-        "--kv-dtype",
-        "int8",
-        "--no-prefix-reuse",
     ]
+    if kv_capacity is not None:
+        command.extend(["--kv-capacity", kv_capacity])
+    command.extend(
+        [
+            "--prefill-chunk",
+            "1024",
+            "--log-stats-interval-ms",
+            "0",
+            "--device",
+            str(device),
+            "--request-log-jsonl",
+            str(server_log),
+            "--kv-dtype",
+            kv_dtype,
+            "--no-prefix-reuse",
+            # Windows (WDDM) only: residency lock over the evictable VRAM budget so
+            # large-context points are not evicted from VRAM. Upstream Linux runs
+            # have no WDDM and no equivalent flag; every Windows campaign run
+            # carries it (documented in the campaign results).
+            "--wddm-evictable-budget",
+        ]
+    )
     if spec.speculative_backend != "none":
         command.extend(
             [
@@ -804,6 +846,8 @@ def run_block(
     records: dict[tuple[str, str, str, str, int], dict[str, Any]],
     completed_before_block: int,
     total: int,
+    kv_capacity: str | None = None,
+    kv_dtype: str = "int8",
 ) -> None:
     first = block_specs[0]
     server_log = (
@@ -811,7 +855,7 @@ def run_block(
         / "server"
         / f"{first.target}_{first.speculative_mode}_{first.sampling_mode}.jsonl"
     )
-    command = server_command(serve, first, server_log, port, device)
+    command = server_command(serve, first, server_log, port, device, kv_capacity, kv_dtype)
     print(
         f"start {first.target}/{first.speculative_mode}: "
         f"{len(block_specs)} missing request(s)",
@@ -819,7 +863,9 @@ def run_block(
     )
     with RunningServer(command, "127.0.0.1", port, server_log) as server:
         server_start = server.wait_until_ready()
-        server_instance_id, weights_id = validate_server_start(server_start, first, device)
+        server_instance_id, weights_id = validate_server_start(
+            server_start, first, device, kv_dtype
+        )
 
         connection = http.client.HTTPConnection(
             "127.0.0.1", port, timeout=REQUEST_TIMEOUT_SECONDS
@@ -1231,6 +1277,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         raise CampaignError("--port must be in [1, 65535]")
     if args.device < 0:
         raise CampaignError("--device must be nonnegative")
+    if args.kv_capacity is not None and args.kv_capacity != "auto":
+        if not args.kv_capacity.isdigit() or int(args.kv_capacity) < 262144:
+            raise CampaignError(
+                f"--kv-capacity must be a token count of at least 262144 or 'auto': {args.kv_capacity!r}"
+            )
 
     serve = args.serve.expanduser().resolve()
     if not serve.is_file():
@@ -1277,6 +1328,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                     records,
                     len(records),
                     total,
+                    args.kv_capacity,
+                    args.kv_dtype,
                 )
 
     missing = set(expected_specs) - set(records)

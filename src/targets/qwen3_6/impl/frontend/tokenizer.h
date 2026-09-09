@@ -9,6 +9,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace ninfer::targets::qwen3_6::frontend_internal {
@@ -139,6 +140,12 @@ public:
                                                std::span<const std::size_t> byte_boundaries,
                                                EncodeOptions options                   = {},
                                                std::span<const ByteSpan> literal_spans = {}) const;
+    // True iff `n` is a conservative mark_prefix site of encode(text): 0, each added-token
+    // match position, each post-match position (advanced by content.size()), or text.size()
+    // after the leftover ordinary run. Ordinary runs are NFC-normalized per run, so only run
+    // delimiters guarantee that a prefix and the suffix re-encode to the same token stream.
+    [[nodiscard]] bool is_encode_loop_pos(std::string_view text, std::size_t n,
+                                          EncodeOptions options = {}) const;
     std::string decode(std::span<const int> ids, DecodeOptions options = {}) const;
     [[nodiscard]] DecodedTokenView decoded_token(int id) const;
     [[nodiscard]] std::string_view decode_token_bytes(int id,
@@ -153,6 +160,11 @@ public:
     [[nodiscard]] bool has_exact_token_domain(std::size_t size) const noexcept;
 
 private:
+    // The earliest added-token match at or after `pos`, mirroring encode_with_boundaries:
+    // the first candidate in candidate-list order whose content matches.
+    [[nodiscard]] std::optional<std::pair<std::size_t, const AddedToken*>>
+    find_leftmost_added(std::string_view text, std::size_t pos) const;
+
     std::vector<std::string> decoded_token_bytes_;
     std::vector<bool> valid_token_ids_;
     std::vector<bool> special_token_ids_;

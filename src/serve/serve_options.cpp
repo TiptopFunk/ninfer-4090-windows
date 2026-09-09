@@ -85,7 +85,8 @@ std::string serve_usage_text(const char* argv0) {
            "[--kv-dtype bf16|int8|fp8|nvfp4|k8v4|rk4v4|rk4v4-e8] [--spec mtp|dflash|dflash2 --draft-tokens N] "
            "[--default-max-tokens N] [--default-thinking-budget N] "
            "[--vision] [--vision-max-tokens N] [--no-cuda-graph] [--no-prefix-reuse] "
-           "[--lm-head-draft] [--no-thinking] [--preserve-thinking] [--cors] "
+           "[--lm-head-draft] [--no-thinking] [--preserve-thinking] "
+           "[--tolerant-tool-calls] [--cors] "
            "[--temperature F] [--top-p F] [--top-k N] [--min-p F] [--presence-penalty F] "
            "[--frequency-penalty F] [--seed N] [--greedy] [--wddm-evictable-budget]\n"
            "       [--log-level trace|debug|info|warning|error|critical|off]\n"
@@ -115,6 +116,8 @@ std::string serve_usage_text(const char* argv0) {
            "       --default-thinking-budget caps model-origin thinking for enabled requests; "
            "control tokens count toward the request output limit\n"
            "       --preserve-thinking retains closed-turn assistant reasoning in later prompts\n"
+           "       --tolerant-tool-calls recovers complete Qwen calls with malformed "
+           "wrapper/suffix output\n"
            "       sampler defaults come from the loaded model and resolved thinking mode; "
            "server flags and request fields override individual values.\n"
            "       --greedy forces temperature 0 (exact argmax).\n"
@@ -306,6 +309,8 @@ ServeOptions parse_serve_options(int argc, char** argv) {
             options.enable_thinking = false;
         } else if (arg == "--preserve-thinking") {
             options.preserve_thinking = true;
+        } else if (arg == "--tolerant-tool-calls") {
+            options.tolerant_tool_calls = true;
         } else if (arg == "--cors") {
             options.enable_cors = true;
         } else if (arg == "--temperature") {

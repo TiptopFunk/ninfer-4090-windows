@@ -399,12 +399,16 @@ std::vector<TextCase> text_cases(std::uint32_t chunk) {
 }
 
 std::uint64_t attention_pairs(std::uint32_t prefix, std::uint32_t suffix) {
-    const unsigned __int128 pairs = static_cast<unsigned __int128>(prefix) * suffix +
-                                    static_cast<unsigned __int128>(suffix) * (suffix + 1ULL) / 2U;
-    if (pairs > std::numeric_limits<std::uint64_t>::max()) {
+    // Port MSVC x64: upstream usa unsigned __int128 (extension GCC/Clang) como guard
+    // de overflow; MSVC no lo soporta. Matematica equivalente: suffix*(suffix+1)
+    // cabe en uint64 (max (2^32-1)*2^32 = 2^64-2^32) y el termino cruzado se
+    // comprueba por division antes de sumar (tira iff la suma excede uint64).
+    const std::uint64_t tri = static_cast<std::uint64_t>(suffix) * (suffix + 1ULL) / 2ULL;
+    if (suffix != 0 &&
+        prefix > (std::numeric_limits<std::uint64_t>::max() - tri) / suffix) {
         throw std::overflow_error("prefill attention-pair count exceeds uint64");
     }
-    return static_cast<std::uint64_t>(pairs);
+    return static_cast<std::uint64_t>(prefix) * suffix + tri;
 }
 
 std::vector<std::uint8_t> block_ppm(int width, int height, std::uint8_t value) {

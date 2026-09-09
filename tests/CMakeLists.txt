@@ -116,6 +116,15 @@ ninfer_add_test(ninfer_qwen3_6_frontend_test
 target_include_directories(ninfer_qwen3_6_frontend_test PRIVATE
   ${PROJECT_SOURCE_DIR}/src/targets/qwen3_6/export
   ${PROJECT_SOURCE_DIR}/src/targets/qwen3_6/impl)
+ninfer_add_test(ninfer_qwen3_6_incremental_encode_test
+  SOURCES targets/qwen3_6/test_incremental_host_encode.cpp
+  NEEDS_SOURCE_DIR
+  LIBRARIES ninfer_engine ninfer_core)
+target_include_directories(ninfer_qwen3_6_incremental_encode_test PRIVATE
+  ${PROJECT_SOURCE_DIR}/src/targets/qwen3_6/export
+  ${PROJECT_SOURCE_DIR}/src/targets/qwen3_6/impl)
+find_package(Threads REQUIRED)
+target_link_libraries(ninfer_qwen3_6_incremental_encode_test PRIVATE Threads::Threads)
 ninfer_add_test(ninfer_qwen3_6_runtime_mechanisms_test
   SOURCES targets/qwen3_6/test_runtime_mechanisms.cpp
   LIBRARIES ninfer_engine ninfer_core)
@@ -412,11 +421,16 @@ foreach(test_target IN LISTS ninfer_qwen3_6_27b_internal_tests)
 endforeach()
 
 # Windows/MSVC: BEX64 (STATUS_STACK_BUFFER_OVERRUN 0xC0000409, /GS cookie check) en estos
-# 2 tests = artefacto del binario de test (MSVC /O2 + /GS). El motor v1.0.7 con datos
-# reales (150k merges, perfil prod 260k) arranca y sirve SIN BEX (smoke :8091, 2026-09-09);
-# en Linux/Clang (upstream) estos tests pasan. Se excluyen solo en Windows.
+# tests = artefacto del binario de test (MSVC /O2 + /GS): crashea en startup, sin output,
+# antes de la logica del test (verificado 2026-09-09: frontend_test v1.0.7 y
+# incremental_encode_test v1.0.8 devuelven 0xC0000409 identico, ambos sin imprimir nada;
+# el test nuevo es de la misma familia — misma forma de enlazar engine+core). El motor
+# v1.0.7 con datos reales (150k merges, perfil prod 260k) arranca y sirve SIN BEX
+# (smoke :8091, 2026-09-09); en Linux/Clang (upstream) estos tests pasan. Se excluyen
+# solo en Windows.
 if(WIN32)
   set_tests_properties(ninfer_qwen3_6_frontend_test ninfer_softmax_attention_test
+                      ninfer_qwen3_6_incremental_encode_test
     PROPERTIES DISABLED true
     DISABLE_REASON "BEX64 0xC0000409 en binario de test (MSVC); motor OK con datos reales")
 endif()

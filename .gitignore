@@ -14,3 +14,6 @@ ffmpeg_temp/
 *.log
 fix_api.py
 fix_cost.py
+_build_*/
+__pycache__/
+*.pyc

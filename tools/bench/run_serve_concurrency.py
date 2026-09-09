@@ -146,6 +146,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         metavar="N|auto",
         help="shared Main KV capacity passed to ninfer-serve (default: 262144)",
     )
+    parser.add_argument(
+        "--kv-dtype",
+        default="int8",
+        help="KV cache dtype passed to ninfer-serve (default: int8, as in the "
+        "upstream Linux campaign commands; rk4v4-e8 is the documented Windows "
+        "fallback when the int8 context does not fit the 24 GB card)",
+    )
     parser.add_argument("--prefill-chunk", type=int, default=1024)
     parser.add_argument("--output", type=Path, required=True, help="benchmark output directory")
     parser.add_argument("--port", type=int, default=8080, help="loopback serving port")
@@ -309,8 +316,13 @@ def server_command(
         "--request-log-jsonl",
         str(server_log),
         "--kv-dtype",
-        "int8",
+        args.kv_dtype,
         "--no-prefix-reuse",
+        # Windows (WDDM) only: residency lock over the evictable VRAM budget so
+        # large-context points are not evicted from VRAM. Upstream Linux runs
+        # have no WDDM and no equivalent flag; every Windows campaign run
+        # carries it (documented in the campaign results).
+        "--wddm-evictable-budget",
     ]
     if point.speculative_backend != "none":
         command.extend(
@@ -359,7 +371,7 @@ def validate_server_start(
         "pending_timeout_ms": PENDING_TIMEOUT_MS,
         "prefill_chunk": args.prefill_chunk,
         "log_stats_interval_ms": STATS_INTERVAL_MS,
-        "kv_cache": "int8-group64",
+        "kv_cache": corpus.canonical_kv_cache(args.kv_dtype),
         "cuda_graph": True,
         "prefix_reuse": False,
         "speculative_backend": point.speculative_backend,
@@ -650,6 +662,107 @@ def steady_metrics(
     }
 
 
+def decode_tail_check(
+    throughput_events: Sequence[dict[str, Any]],
+    committed_decode_tokens: int,
+    request_done_decode_tokens: int,
+) -> dict[str, int | float] | None:
+    """Validate the throughput/request_done decode token totals.
+
+    On POSIX, Popen.terminate() is SIGTERM: the server stops gracefully and
+    flushes its final partial stats interval (the "tail") to the request log,
+    so the totals match exactly. On Windows, terminate() is TerminateProcess:
+    the tail is never written and the totals are short by exactly the decode
+    committed after the last stats tick. The shortfall is then bounded by the
+    peak per-second decode commitment of any observed interval (one stats
+    interval of 1000 ms, +1% cadence slack); a larger shortfall is a real
+    inconsistency and raises. Returns the tail record for the report (None
+    when the totals match exactly).
+    """
+    if committed_decode_tokens == request_done_decode_tokens:
+        return None
+    if committed_decode_tokens > request_done_decode_tokens:
+        raise corpus.CampaignError("throughput and request_done decode token totals differ")
+    if os.name != "nt":
+        raise corpus.CampaignError("throughput and request_done decode token totals differ")
+    rates = [
+        int(event["tokens"]["committed_decode"]) / float(event["interval_seconds"])
+        for event in throughput_events
+        if float(event.get("interval_seconds", 0.0)) > 0.0
+    ]
+    if not rates:
+        raise corpus.CampaignError(
+            "decode totals differ with no stats interval available to bound the tail"
+        )
+    bound = 1.01 * max(rates)
+    shortfall = request_done_decode_tokens - committed_decode_tokens
+    if shortfall > bound:
+        raise corpus.CampaignError(
+            "throughput decode total shortfall exceeds one stats interval: "
+            f"committed={committed_decode_tokens} done={request_done_decode_tokens} "
+            f"bound={bound:.0f}"
+        )
+    return {
+        "committed_decode_tokens": committed_decode_tokens,
+        "request_done_decode_tokens": request_done_decode_tokens,
+        "missing_tail_tokens": shortfall,
+        "peak_decode_tokens_per_second": max(rates),
+    }
+
+
+def prefill_tail_check(
+    throughput_events: Sequence[dict[str, Any]],
+    committed_prefill_tokens: int,
+    request_done_prefill_tokens: int,
+) -> dict[str, int | float] | None:
+    """Validate the throughput/request_done prefill token totals.
+
+    Same Windows tail-loss mechanism as decode_tail_check: the server is
+    hard-killed (TerminateProcess) right after the last response, so the
+    stats reporter never emits its final partial interval. Prefill tokens
+    committed in that unemitted tail are missing from the throughput sum
+    while every request_done reports its full computed prefill. The shortfall
+    is bounded by the largest single-interval prefill of any observed
+    throughput event (one 1000 ms stats interval of prefill, +1% cadence
+    slack); a larger shortfall is a real inconsistency and raises. Returns
+    the tail record for the report (None when the totals match exactly).
+    POSIX stays strict.
+    """
+    if committed_prefill_tokens == request_done_prefill_tokens:
+        return None
+    if committed_prefill_tokens > request_done_prefill_tokens:
+        raise corpus.CampaignError(
+            "throughput and request_done prefill token totals differ"
+        )
+    if os.name != "nt":
+        raise corpus.CampaignError(
+            "throughput and request_done prefill token totals differ"
+        )
+    peaks = [
+        int(event["tokens"]["computed_prefill"])
+        for event in throughput_events
+        if float(event.get("interval_seconds", 0.0)) > 0.0
+    ]
+    if not peaks:
+        raise corpus.CampaignError(
+            "prefill totals differ with no stats interval available to bound the tail"
+        )
+    bound = 1.01 * max(peaks)
+    shortfall = request_done_prefill_tokens - committed_prefill_tokens
+    if shortfall > bound:
+        raise corpus.CampaignError(
+            "throughput prefill total shortfall exceeds one stats interval: "
+            f"committed={committed_prefill_tokens} "
+            f"done={request_done_prefill_tokens} bound={bound:.0f}"
+        )
+    return {
+        "committed_prefill_tokens": committed_prefill_tokens,
+        "request_done_prefill_tokens": request_done_prefill_tokens,
+        "missing_tail_tokens": shortfall,
+        "peak_interval_prefill_tokens": max(peaks),
+    }
+
+
 def client_records(
     results: Sequence[ClientResult], campaign_start: float
 ) -> list[dict[str, Any]]:
@@ -701,10 +814,16 @@ def analyze_point(
         "completion_tokens"
     ]:
         raise corpus.CampaignError("client usage and request_done token totals differ")
-    if runtime_totals["computed_prefill_tokens"] != done_totals["computed_prefill_tokens"]:
-        raise corpus.CampaignError("throughput and request_done prefill token totals differ")
-    if runtime_totals["committed_decode_tokens"] != done_totals["decode_tokens"]:
-        raise corpus.CampaignError("throughput and request_done decode token totals differ")
+    prefill_tail = prefill_tail_check(
+        throughput,
+        runtime_totals["computed_prefill_tokens"],
+        done_totals["computed_prefill_tokens"],
+    )
+    decode_tail = decode_tail_check(
+        throughput,
+        runtime_totals["committed_decode_tokens"],
+        done_totals["decode_tokens"],
+    )
 
     makespan = campaign_end - campaign_start
     if makespan <= 0.0:
@@ -753,6 +872,8 @@ def analyze_point(
         "memory": server_start.get("memory", {}),
         "environment": server_start.get("environment", {}),
         "totals": done_totals,
+        "decode_tail": decode_tail,
+        "prefill_tail": prefill_tail,
         "decode_batch": {
             "rounds": runtime_totals["decode_rounds"],
             "row_rounds": runtime_totals["decode_row_rounds"],

@@ -287,11 +287,12 @@ constexpr int kExpertStages = 2;
 constexpr int kGateUpNarrowStages = 6;
 constexpr int kExpertWarps        = 8;
 constexpr int kExpertThreads      = 32 * kExpertWarps;
-constexpr int kRtx5090SmCount     = 170;
 // Upper bound on the persistent grid. The routed GEMMs stride their work list by gridDim.x,
-// so any grid is correct; this caps the launch when the work list is long.
+// so any grid is correct; this caps the launch when the work list is long. The per-SM factor is
+// the design bound and the SM count comes from the live device, so the cap tracks the part.
 constexpr int kPrefillMaxBlocksPerSm = 32;
-constexpr int kPrefillMaxBlocks      = kPrefillMaxBlocksPerSm * kRtx5090SmCount;
+
+int prefill_max_blocks() { return kPrefillMaxBlocksPerSm * device_sm_count(); }
 
 // The narrow routed gate/up ships in both depths and the route picks one. A job is one nonempty
 // column tile of one expert, so more than one job per touched expert means an expert's rows
@@ -1248,8 +1249,8 @@ void sparse_moe_prefill_launch(const Tensor& x, const SparseMoeWeights& weights,
         const int max_route_jobs     = assignments / route_job_bn + kExperts;
         const int routed_gate_work   = max_route_jobs * (kIntermediate / (kExpertBM / 2));
         const int routed_down_work   = max_route_jobs * (kHidden / kExpertBM);
-        const int routed_gate_blocks = std::min(routed_gate_work, kPrefillMaxBlocks);
-        const int routed_down_blocks = std::min(routed_down_work, kPrefillMaxBlocks);
+        const int routed_gate_blocks = std::min(routed_gate_work, prefill_max_blocks());
+        const int routed_down_blocks = std::min(routed_down_work, prefill_max_blocks());
         sparse_moe_prefill_scan_kernel<<<1, kExpertThreads, 0, stream>>>(
             tile_counts, tile_bases, offsets, route_job_experts, route_job_columns, route_job_count,
             route_tiles, route_job_bn, tokens, adaptive);

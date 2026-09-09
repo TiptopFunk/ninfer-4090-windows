@@ -740,17 +740,11 @@ std::span<const std::int32_t> ProcessedInput::position_axis(int axis) const {
         static_cast<std::size_t>(axis) * input_ids.size(), input_ids.size());
 }
 
-EncodedChat encode_rendered_chat(const Tokenizer& tokenizer, const RenderedChat& rendered,
-                                 std::size_t maximum_tokens) {
-    if (!rendered.media_placeholders.empty()) {
-        throw std::logic_error("rendered chat contains unexpanded media placeholders");
-    }
-    EncodedChat encoded;
-    std::vector<std::size_t> byte_boundaries;
-    byte_boundaries.reserve((rendered.rewrite_checkpoint ? 1U : 0U) +
-                            rendered.rewrite_execution_boundaries.size() +
-                            rendered.message_boundaries.size() + rendered.cache_boundaries.size() +
-                            rendered.media_token_runs.size() * 2U);
+// The rendered boundary list in mapper order: checkpoint, execution boundaries, present
+// message boundaries, present cache boundaries. Media run boundaries are appended by the
+// caller after this list.
+void append_rendered_text_boundaries(const RenderedChat& rendered,
+                                     std::vector<std::size_t>& byte_boundaries) {
     if (rendered.rewrite_checkpoint) {
         byte_boundaries.push_back(rendered.rewrite_checkpoint->offset);
     }
@@ -762,6 +756,39 @@ EncodedChat encode_rendered_chat(const Tokenizer& tokenizer, const RenderedChat&
     for (const std::optional<std::size_t> boundary : rendered.cache_boundaries) {
         if (boundary) { byte_boundaries.push_back(*boundary); }
     }
+}
+
+bool operator==(const EncodedChat& lhs, const EncodedChat& rhs) {
+    return lhs.input_ids == rhs.input_ids &&
+           lhs.media_token_runs.size() == rhs.media_token_runs.size() &&
+           std::equal(lhs.media_token_runs.begin(), lhs.media_token_runs.end(),
+                      rhs.media_token_runs.begin(),
+                      [](const EncodedChat::MediaTokenRun& a,
+                         const EncodedChat::MediaTokenRun& b) {
+                          return a.tokens.begin == b.tokens.begin &&
+                                 a.tokens.count == b.tokens.count && a.modality == b.modality &&
+                                 a.item_index == b.item_index && a.frame_index == b.frame_index;
+                      }) &&
+           lhs.rewrite_checkpoint == rhs.rewrite_checkpoint &&
+           lhs.rewrite_execution_frontiers == rhs.rewrite_execution_frontiers &&
+           lhs.message_boundaries == rhs.message_boundaries &&
+           lhs.cache_boundaries == rhs.cache_boundaries;
+}
+
+RenderedEncodeResult encode_rendered_chat_full(const Tokenizer& tokenizer,
+                                               const RenderedChat& rendered,
+                                               std::size_t maximum_tokens) {
+    if (!rendered.media_placeholders.empty()) {
+        throw std::logic_error("rendered chat contains unexpanded media placeholders");
+    }
+    RenderedEncodeResult result;
+    EncodedChat& encoded = result.chat;
+    std::vector<std::size_t>& byte_boundaries = result.boundary_list;
+    byte_boundaries.reserve((rendered.rewrite_checkpoint ? 1U : 0U) +
+                            rendered.rewrite_execution_boundaries.size() +
+                            rendered.message_boundaries.size() + rendered.cache_boundaries.size() +
+                            rendered.media_token_runs.size() * 2U);
+    append_rendered_text_boundaries(rendered, byte_boundaries);
     for (const MediaTokenRunByteSpec& run : rendered.media_token_runs) {
         byte_boundaries.push_back(run.bytes.begin);
         byte_boundaries.push_back(run.bytes.end);
@@ -771,7 +798,10 @@ EncodedChat encode_rendered_chat(const Tokenizer& tokenizer, const RenderedChat&
         rendered.text, byte_boundaries, EncodeOptions{.max_tokens = maximum_tokens},
         rendered.literal_spans);
     encoded.input_ids = std::move(tokenized.input_ids);
-    if (encoded.input_ids.size() == maximum_tokens) { return encoded; }
+    if (encoded.input_ids.size() == maximum_tokens) {
+        result.boundary_results = std::move(tokenized.boundaries);
+        return result;
+    }
     std::size_t boundary_index = 0;
     const auto to_frontier     = [](std::size_t frontier, std::string_view kind) {
         if (frontier > std::numeric_limits<std::uint32_t>::max()) {
@@ -849,7 +879,13 @@ EncodedChat encode_rendered_chat(const Tokenizer& tokenizer, const RenderedChat&
     if (boundary_index != tokenized.boundaries.size()) {
         throw std::logic_error("rendered token boundary result count changed during encoding");
     }
-    return encoded;
+    result.boundary_results = std::move(tokenized.boundaries);
+    return result;
+}
+
+EncodedChat encode_rendered_chat(const Tokenizer& tokenizer, const RenderedChat& rendered,
+                                 std::size_t maximum_tokens) {
+    return encode_rendered_chat_full(tokenizer, rendered, maximum_tokens).chat;
 }
 
 Processor::Processor(const Tokenizer& tokenizer, const CompiledChatTemplate& chat_template,

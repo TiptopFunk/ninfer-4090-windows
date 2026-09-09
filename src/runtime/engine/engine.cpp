@@ -7,6 +7,7 @@
 #include "runtime/contract/types.h"
 #include "runtime/engine/causal_score_core.h"
 #include "runtime/engine/engine_core.h"
+#include "targets/qwen3_6/impl/frontend/encoded_history_cache.h"
 #include "targets/registry.h"
 
 #include <algorithm>
@@ -268,6 +269,7 @@ public:
     LoadSummary load;
     ModelSamplingDefaults sampling_defaults;
     Core core;
+    mutable targets::qwen3_6::frontend_internal::EncodedHistoryCache host_encode_cache;
 };
 
 Engine::Engine(EngineOptions options) {
@@ -289,7 +291,8 @@ PreparedPrompt Engine::prepare(PromptInput input, const PreparationControl& cont
     return std::visit(
         [&](const auto& target_ptr) -> PreparedPrompt {
             if (target_ptr == nullptr) { throw std::logic_error("Engine target is not active"); }
-            auto prepared      = target_ptr->loaded->frontend.prepare(std::move(input), control);
+            auto prepared = target_ptr->loaded->frontend.prepare(
+                std::move(input), control, &impl_->host_encode_cache);
             PromptSummary info = prepared.summary();
             if (info.prompt_tokens > target_ptr->capacity) {
                 throw std::logic_error("target Frontend admitted a prompt beyond Engine capacity");
@@ -373,7 +376,8 @@ std::uint32_t Engine::count_tokens(PromptInput input, const PreparationControl& 
     return std::visit(
         [&](const auto& target_ptr) {
             if (target_ptr == nullptr) { throw std::logic_error("Engine target is not active"); }
-            return target_ptr->loaded->frontend.count_tokens(std::move(input), control);
+            return target_ptr->loaded->frontend.count_tokens(
+                std::move(input), control, &impl_->host_encode_cache);
         },
         impl_->active);
 }

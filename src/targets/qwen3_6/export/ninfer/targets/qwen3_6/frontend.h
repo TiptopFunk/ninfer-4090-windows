@@ -31,6 +31,10 @@ class Frontend;
 class FrontendTestAccess;
 class PreparedPromptAccess;
 
+namespace frontend_internal {
+class EncodedHistoryCache;
+} // namespace frontend_internal
+
 class PreparedPrompt {
 public:
     PreparedPrompt() noexcept;
@@ -133,9 +137,12 @@ public:
     ~Frontend();
 
     [[nodiscard]] PreparedPrompt prepare(PromptInput input,
-                                         const PreparationControl& control = {}) const;
-    [[nodiscard]] std::uint32_t count_tokens(PromptInput input,
-                                             const PreparationControl& control = {}) const;
+                                         const PreparationControl& control = {},
+                                         frontend_internal::EncodedHistoryCache* cache = nullptr)
+        const;
+    [[nodiscard]] std::uint32_t
+    count_tokens(PromptInput input, const PreparationControl& control = {},
+                 frontend_internal::EncodedHistoryCache* cache = nullptr) const;
     [[nodiscard]] PreparedPrompt prepare_tokens(std::vector<TokenId> token_ids,
                                                 bool allow_prefix_identity = true) const;
     [[nodiscard]] std::vector<TokenId> tokenize_text(std::string_view text) const;
@@ -157,5 +164,19 @@ private:
 };
 
 [[nodiscard]] Frontend make_frontend(const FrontendResources& resources, FrontendOptions options);
+
+// Convenience wrapper for the incremental host-encode path: runs Frontend::prepare with an
+// Engine-owned committed-prefix cache so continuation prompts re-encode only the suffix.
+class EncodedHistoryPrepare {
+public:
+    [[nodiscard]] static PreparedPrompt
+    prepare(const Frontend& frontend, PromptInput input,
+            frontend_internal::EncodedHistoryCache& cache,
+            const PreparationControl& control = {});
+    [[nodiscard]] static std::uint32_t
+    count_tokens(const Frontend& frontend, PromptInput input,
+                 frontend_internal::EncodedHistoryCache& cache,
+                 const PreparationControl& control = {});
+};
 
 } // namespace ninfer::targets::qwen3_6
