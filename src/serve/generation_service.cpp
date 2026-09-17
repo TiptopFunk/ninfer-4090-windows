@@ -246,6 +246,8 @@ GenerationService::GenerationService(ServeOptions options, StartupObserver start
     engine_options.vision_max_tokens        = options_.vision_max_tokens;
     engine_options.use_cuda_graph           = options_.use_cuda_graph;
     engine_options.wddm_evictable_budget    = options_.wddm_evictable_budget;
+    engine_options.rope_scaling_factor      = options_.rope_scaling_factor;
+    engine_options.rope_scaling_original_context = options_.rope_scaling_original_context;
     engine_options.speculative              = options_.speculative;
     engine_options.context_cache            = options_.context_cache;
     engine_options.context_cost.preset_path = options_.context_cost_presets;

@@ -83,6 +83,7 @@ std::string serve_usage_text(const char* argv0) {
            "[--request-log-jsonl FILE] "
            "[--response-store-max-records N] [--response-store-max-mib N] "
            "[--kv-dtype bf16|int8|fp8|nvfp4|k8v4|rk4v4|rk4v4-e8] [--spec mtp|dflash|dflash2 --draft-tokens N] "
+           "[--rope-scaling-factor F] [--rope-scaling-original-context N] "
            "[--default-max-tokens N] [--default-thinking-budget N] "
            "[--vision] [--vision-max-tokens N] [--no-cuda-graph] [--no-prefix-reuse] "
            "[--lm-head-draft] [--no-thinking] [--preserve-thinking] "
@@ -123,7 +124,10 @@ std::string serve_usage_text(const char* argv0) {
            "       --greedy forces temperature 0 (exact argmax).\n"
            "       --wddm-evictable-budget budgets runtime memory against total VRAM on dedicated "
            "GPUs, ignoring the WDDM process budget (Windows only; the GPU must not drive a "
-           "concurrent desktop GPU workload)\n";
+           "concurrent desktop GPU workload)\n"
+           "       --rope-scaling-factor applies YaRN position scaling (1.0 = disabled); "
+           "extends effective context by the factor.\n"
+           "       --rope-scaling-original-context is the YaRN ramp threshold (default 262144).\n";
 }
 
 ServeOptions parse_serve_options(int argc, char** argv) {
@@ -272,6 +276,14 @@ ServeOptions parse_serve_options(int argc, char** argv) {
             options.device = parse_nonnegative_int(require_value("--device"), "device");
         } else if (arg == "--kv-dtype") {
             options.kv_cache = parse_kv_dtype(require_value("--kv-dtype"));
+        } else if (arg == "--rope-scaling-factor") {
+            options.rope_scaling_factor =
+                parse_float_in(require_value("--rope-scaling-factor"), "rope-scaling-factor", 1.0f,
+                               16.0f);
+        } else if (arg == "--rope-scaling-original-context") {
+            options.rope_scaling_original_context = static_cast<std::uint32_t>(
+                parse_nonnegative_int(require_value("--rope-scaling-original-context"),
+                                     "rope-scaling-original-context"));
         } else if (arg == "--spec") {
             options.speculative.backend =
                 product::parse_speculative_backend(require_value("--spec"));

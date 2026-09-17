@@ -1,0 +1,40 @@
+name: Windows YaRN sm89 Build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup CUDA 13.1
+        uses: Jimver/cuda-toolkit@v0.2.16
+        with:
+          cuda: "13.1.0"
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+      - name: Setup Ninja
+        uses: seanmiddleditch/gha-setup-ninja@v5
+      - name: Prepare FFmpeg
+        shell: powershell
+        run: ./tools/Prepare-FFmpeg-Windows.ps1 -Destination ./ffmpeg
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES=89 -DNINFER_ENABLE_AVX2=ON -DBUILD_TESTING=OFF -DNINFER_BUILD_BENCHMARKS=OFF
+      - name: Build
+        run: cmake --build build --config Release --parallel
+      - name: Verify YaRN option
+        shell: powershell
+        run: |
+          $help = & ./build/apps/ninfer-serve.exe --help 2>&1 | Out-String
+          if (-not $help.Contains("--rope-scaling-factor")) { throw "YaRN option missing" }
+      - name: Stage runtime
+        shell: powershell
+        run: |
+          New-Item runtime -ItemType Directory -Force | Out-Null
+          Copy-Item build/apps/ninfer-serve.exe,build/apps/ninfer.exe,build/apps/ninfer-perplexity.exe runtime/
+          Copy-Item ffmpeg/bin/*.dll runtime/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ninfer-windows-yarn-sm89
+          path: runtime

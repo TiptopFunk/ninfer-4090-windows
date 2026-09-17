@@ -29,6 +29,18 @@ using qwen3_6::PreparedPromptData;
 using qwen3_6::PromptModality;
 
 struct ExecutionCore {
+    ExecutionCore(DeviceContext& device_in, const LoadedModelData& model_in,
+                  WorkspaceArena& work_in, LinearAttentionStatePool& linear_attention_in,
+                  const GdnReplayRecords* replay_records_in, qwen3_6::RoundState& io_in,
+                  Tensor& prefill_hidden_in, std::uint32_t prefill_chunk_in,
+                  ProposalHead proposal_head_in, float rope_scaling_factor_in,
+                  std::uint32_t rope_scaling_original_context_in)
+        : device(device_in), model(model_in), work(work_in),
+          linear_attention(linear_attention_in), replay_records(replay_records_in), io(io_in),
+          prefill_hidden(prefill_hidden_in), prefill_chunk(prefill_chunk_in),
+          proposal_head(proposal_head_in), rope_scaling_factor(rope_scaling_factor_in),
+          rope_scaling_original_context(rope_scaling_original_context_in) {}
+
     DeviceContext& device;
     const LoadedModelData& model;
     WorkspaceArena& work;
@@ -38,6 +50,8 @@ struct ExecutionCore {
     Tensor& prefill_hidden;
     std::uint32_t prefill_chunk;
     ProposalHead proposal_head;
+    float rope_scaling_factor;
+    std::uint32_t rope_scaling_original_context;
 };
 
 struct PrefillContext {

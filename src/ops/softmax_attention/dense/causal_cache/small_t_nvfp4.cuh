@@ -53,7 +53,7 @@ __launch_bounds__(WarpsPerCta * 32, MinBlocksPerSm) __global__
     constexpr int ConsumerWarpsPerTile = Wc / RowTiles;
     constexpr int PVNtPerWarp          = D / (ConsumerWarpsPerTile * 8);
     constexpr int PVKs                 = Bc / 16;
-    constexpr int PageIds              = 64;
+    constexpr int PageIds              = 128;
     constexpr float Log2E              = 1.4426950408889634074F;
     constexpr unsigned FullMask        = 0xffffffffU;
 
@@ -509,7 +509,10 @@ __launch_bounds__(WarpsPerCta * 32, MinBlocksPerSm) __global__
         if (has_next) {
             const int next_k0 = k0 + Bc;
             if ((next_k0 & kPagedKVPageMask) == 0) {
-                physical_page = physical_pages_s[(next_k0 >> kPagedKVPageShift) - first_page];
+                const int next_page_idx = (next_k0 >> kPagedKVPageShift) - first_page;
+                if (next_page_idx < page_count) {
+                    physical_page = physical_pages_s[next_page_idx];
+                }
             }
             issue_kv_tile(next_k0, physical_page);
         }
