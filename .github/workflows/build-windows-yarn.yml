@@ -11,9 +11,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Setup CUDA 13.1
-        uses: Jimver/cuda-toolkit@v0.2.16
-        with:
-          cuda: "13.1.0"
+        shell: powershell
+        run: |
+          $installer = Join-Path $env:RUNNER_TEMP "cuda_13.1.0_windows_network.exe"
+          Invoke-WebRequest -Uri "https://developer.download.nvidia.com/compute/cuda/13.1.0/network_installers/cuda_13.1.0_windows_network.exe" -OutFile $installer
+          $process = Start-Process -FilePath $installer -ArgumentList "-s -n nvcc_13.1 cudart_13.1 nvtx_13.1" -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "CUDA installer failed with exit code $($process.ExitCode)" }
+          $cudaPath = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.1"
+          if (-not (Test-Path "$cudaPath\bin\nvcc.exe")) { throw "CUDA 13.1 nvcc not found" }
+          "CUDA_PATH=$cudaPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "$cudaPath\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
       - name: Setup Ninja
