@@ -1,6 +1,8 @@
 name: Windows YaRN sm89 Build
 
 on:
+  push:
+    branches: ["windows-yarn-sm89"]
   workflow_dispatch:
 
 jobs:
