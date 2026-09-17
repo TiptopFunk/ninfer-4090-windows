@@ -42,6 +42,7 @@ jobs:
         run: |
           New-Item runtime -ItemType Directory -Force | Out-Null
           Copy-Item build/apps/ninfer-serve.exe,build/apps/ninfer.exe,build/apps/ninfer-perplexity.exe runtime/
+          Copy-Item "$env:CUDA_PATH/bin/cudart64_13.dll" runtime/
           Copy-Item ffmpeg/bin/*.dll runtime/
       - uses: actions/upload-artifact@v4
         with:
